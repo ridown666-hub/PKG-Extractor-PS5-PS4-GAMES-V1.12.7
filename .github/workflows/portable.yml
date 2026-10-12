@@ -1,0 +1,66 @@
+name: Publish portable package
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/portable.yml']
+permissions:
+  contents: write
+jobs:
+  portable:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Download and verify published executable
+        run: |
+          mkdir -p package/PKG_Extractor_Arctic_Fluid_Portable/Data/Roaming
+          mkdir -p package/PKG_Extractor_Arctic_Fluid_Portable/Data/Local
+          gh release download PKGExtractor --pattern PKG_Extractor_Arctic_Fluid.exe --dir package/PKG_Extractor_Arctic_Fluid_Portable
+          echo 'ae1e8405577fb92612e2280a02b39d6ed478930f51886651f51e08557fb8b49b  package/PKG_Extractor_Arctic_Fluid_Portable/PKG_Extractor_Arctic_Fluid.exe' | sha256sum --check
+      - name: Create portable launcher and archive
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile, hashlib
+          root = Path('package/PKG_Extractor_Arctic_Fluid_Portable')
+          launcher = [
+              '@echo off', 'setlocal EnableExtensions DisableDelayedExpansion',
+              'cd /d "%~dp0"',
+              'if not exist "Data\\Roaming" mkdir "Data\\Roaming"',
+              'if not exist "Data\\Local" mkdir "Data\\Local"',
+              'set "APPDATA=%~dp0Data\\Roaming"',
+              'set "LOCALAPPDATA=%~dp0Data\\Local"',
+              'start "" /wait "%~dp0PKG_Extractor_Arctic_Fluid.exe"',
+              'exit /b %errorlevel%',
+          ]
+          (root / 'INICIAR_PORTABLE.bat').write_bytes(('\r\n'.join(launcher)+'\r\n').encode('ascii'))
+          (root / 'LEIA-ME.txt').write_text(
+              'PKG EXTRACTOR ARCTIC FLUID - PORTABLE\n\n'
+              '1. Extrai o ZIP completo para uma pasta com permissao de escrita.\n'
+              '2. Abre INICIAR_PORTABLE.bat. Nao requer instalacao da app.\n'
+              '3. Para transportar as definicoes, copia a pasta completa, incluindo Data.\n\n'
+              'O lancador guarda as definicoes em Data/Roaming. Abrir o EXE diretamente\n'
+              'usa as definicoes normais do perfil Windows.\n'
+              'Fecha a app antes de retirar uma pen USB.\n'
+              'Ficheiros extraidos ficam no destino escolhido; caminhos guardados podem\n'
+              'ter de ser selecionados novamente noutro PC.\n'
+              'O executavel pode usar ficheiros temporarios do Windows durante a execucao.\n\n'
+              'EXE original preservado, sem recompilacao. Windows x64.\n'
+              'Pacote verificado por SHA256; execucao Windows nao validada neste empacotamento.\n'
+              'Projeto: RicardoStonePT. Componentes de terceiros conservam as suas licencas.\n',
+              encoding='utf-8')
+          exe = root / 'PKG_Extractor_Arctic_Fluid.exe'
+          (root / 'SHA256.txt').write_text(hashlib.sha256(exe.read_bytes()).hexdigest()+'  '+exe.name+'\n')
+          output = Path('PKG_Extractor_Arctic_Fluid_Portable.zip')
+          with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as z:
+              for p in sorted(root.rglob('*')):
+                  z.write(p, p.relative_to(root.parent))
+          with zipfile.ZipFile(output) as z:
+              assert z.testzip() is None
+          Path(str(output)+'.sha256').write_text(hashlib.sha256(output.read_bytes()).hexdigest()+'  '+output.name+'\n')
+          PY
+      - name: Publish portable assets
+        run: gh release upload PKGExtractor PKG_Extractor_Arctic_Fluid_Portable.zip PKG_Extractor_Arctic_Fluid_Portable.zip.sha256
