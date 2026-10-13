@@ -7,6 +7,8 @@
 #include <sys/stat.h>
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_PNG
+#define STBI_NO_HDR
+#define STBI_NO_LINEAR
 #define STBI_NO_STDIO
 #include "../vendor/stb_image.h"
 extern const unsigned char sidebar_data[], font_data[];
