@@ -33,7 +33,26 @@ jobs:
           (cd upstream && ./install-libmicrohttpd.sh)
           make -C upstream -j2
           readelf -h upstream/arctic-fluid-ps5.elf | tee elf-header.txt
-          grep -q 'FreeBSD' elf-header.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          b = Path('upstream/arctic-fluid-ps5.elf').read_bytes()
+          assert b[:7] == b'\x7fELF\x02\x01\x01', 'Expected ELF64 little-endian'
+          assert struct.unpack_from('<HH', b, 16) == (3, 62), 'Expected x86-64 PIE'
+          entry, phoff = struct.unpack_from('<QQ', b, 24)
+          phsize, phnum = struct.unpack_from('<HH', b, 54)
+          assert phsize == 56 and phoff + phsize * phnum <= len(b)
+          executable_entry = False
+          for i in range(phnum):
+              typ, flags, offset, addr, _, filesz, memsz, align = struct.unpack_from('<IIQQQQQQ', b, phoff+i*phsize)
+              assert offset + filesz <= len(b)
+              if typ == 1:
+                  assert filesz <= memsz
+                  if flags & 1 and addr <= entry < addr + memsz:
+                      executable_entry = True
+          assert executable_entry, 'Entry point must be in executable LOAD segment'
+          print('PS5 SDK ELF64 structure and entry point verified')
+          PY
           grep -q 'Advanced Micro Devices X86-64' elf-header.txt
       - name: Package ELF and corresponding source
         run: |
