@@ -1,3 +1,8 @@
+https://www.youtube.com/@RicardoStonePt
+
+Please SUBSCRIVE ,COMMENT
+
+
 # PKG Extractor — Arctic 
 **Aplicação para Windows para trabalhar com pacotes PKG de PS5 e PS4.**  
 Projeto de **RicardoStonePT**.
