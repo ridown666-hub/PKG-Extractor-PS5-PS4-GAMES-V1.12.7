@@ -1,0 +1,78 @@
+name: Build own native PS5 interface
+on:
+  push:
+    branches: [ps5-native-ui]
+    paths: ['native/**', '.github/workflows/native-ps5.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: sudo apt-get update -qq && sudo apt-get install -y clang llvm lld python3-pyelftools python3-pil
+      - name: Fetch SDK
+        run: |
+          curl -fL https://github.com/ps5-payload-dev/sdk/releases/download/v0.44/ps5-payload-sdk.zip -o sdk.zip
+          unzip -q sdk.zip -d sdk
+          chmod +x sdk/ps5-payload-sdk/bin/*
+      - name: Render host preview
+        working-directory: native
+        run: |
+          python3 generate_assets.py
+          cc -O2 -Isrc src/ui.c src/preview.c src/assets.c -lm -o preview
+          ./preview
+          python3 -c "from PIL import Image; Image.open('native-preview.ppm').save('native-preview.png')"
+      - name: Compile native ELF
+        working-directory: native
+        run: |
+          export PS5_PAYLOAD_SDK="$GITHUB_WORKSPACE/sdk/ps5-payload-sdk"
+          export LLVM_CONFIG=/usr/bin/llvm-config
+          make -j2
+          readelf -h arctic-fluid-native-ps5.elf > elf-header.txt
+          readelf -d arctic-fluid-native-ps5.elf > elf-imports.txt
+          grep -q libSceVideoOut.sprx elf-imports.txt
+          grep -q libScePad.sprx elf-imports.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          b=Path('arctic-fluid-native-ps5.elf').read_bytes()
+          assert b[:7]==b'\x7fELF\x02\x01\x01'
+          assert struct.unpack_from('<HH',b,16)==(3,62)
+          entry,phoff=struct.unpack_from('<QQ',b,24)
+          size,count=struct.unpack_from('<HH',b,54)
+          assert size==56 and phoff+size*count<=len(b)
+          executable=False
+          for i in range(count):
+              typ,flags,off,addr,_,fs,ms,align=struct.unpack_from('<IIQQQQQQ',b,phoff+i*size)
+              assert off+fs<=len(b)
+              if typ==1:
+                  assert fs<=ms
+                  executable |= bool(flags&1 and addr<=entry<addr+ms)
+          assert executable
+          PY
+      - name: Package own source and runtime source
+        run: |
+          mkdir -p release/source release/dependencies
+          cp native/arctic-fluid-native-ps5.elf native/native-preview.png native/elf-header.txt native/elf-imports.txt release/
+          cp native/README.md release/LEIA-ME.md
+          cp -R native/src native/assets native/vendor release/source/
+          cp native/Makefile native/generate_assets.py native/README.md native/THIRD_PARTY_NOTICES.md native/FONT_LICENSE.txt release/source/
+          cp -R sdk/ps5-payload-sdk release/dependencies/
+          curl -fL https://github.com/ps5-payload-dev/sdk/archive/refs/tags/v0.44.tar.gz -o release/dependencies/sdk-v0.44-source.tar.gz
+          cd release
+          sha256sum arctic-fluid-native-ps5.elf > SHA256.txt
+          zip -qr ../Arctic_Fluid_PS5_Native_0.2.0_source.zip .
+      - name: Save compiled files
+        uses: actions/upload-artifact@v4
+        with:
+          name: Arctic-Fluid-PS5-Native-0.2.0
+          path: |
+            release/arctic-fluid-native-ps5.elf
+            release/native-preview.png
+            release/SHA256.txt
+            Arctic_Fluid_PS5_Native_0.2.0_source.zip
+          retention-days: 14
