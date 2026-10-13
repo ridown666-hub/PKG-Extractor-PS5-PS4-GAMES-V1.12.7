@@ -1,6 +1,6 @@
 https://www.youtube.com/@RicardoStonePt
 
-Please SUBSCRIVE ,COMMENT
+Please Subscribe  ,COMMENT
 
 
 # PKG Extractor — Arctic 
