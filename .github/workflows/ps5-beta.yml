@@ -1,0 +1,57 @@
+name: Build Arctic PS5 beta
+on:
+  push:
+    branches: [ps5-arctic-development]
+    paths: ['ps5/**', '.github/workflows/ps5-beta.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install compiler tools
+        run: sudo apt-get update -qq && sudo apt-get install -y clang llvm lld cmake pkg-config autoconf automake libtool python3-pyelftools
+      - name: Fetch pinned source and SDK
+        run: |
+          git clone https://github.com/owendswang/ps5-web-file-manager.git upstream
+          git -C upstream checkout 3368c82cb50f41e19de80d4fcfffeb05e47b8eb7
+          git -C upstream submodule update --init --recursive
+          curl -fL https://github.com/ps5-payload-dev/sdk/releases/download/v0.44/ps5-payload-sdk.zip -o sdk.zip
+          unzip -q sdk.zip -d sdk
+          chmod +x sdk/ps5-payload-sdk/bin/*
+          cp -R ps5/overrides/. upstream/
+      - name: Check frontend and compile
+        run: |
+          node --check upstream/assets/main.js
+          node upstream/tests/frontend-actions.js
+          export PS5_PAYLOAD_SDK="$GITHUB_WORKSPACE/sdk/ps5-payload-sdk"
+          export LLVM_CONFIG=/usr/bin/llvm-config
+          chmod +x upstream/install-libmicrohttpd.sh
+          make -C upstream -j2
+          readelf -h upstream/arctic-fluid-ps5.elf | tee elf-header.txt
+          grep -q 'FreeBSD' elf-header.txt
+          grep -q 'Advanced Micro Devices X86-64' elf-header.txt
+      - name: Package ELF and corresponding source
+        run: |
+          mkdir -p release/source release/dependencies
+          cp upstream/arctic-fluid-ps5.elf release/
+          cp ps5/README_PS5.md release/LEIA-ME.md
+          cp upstream/LICENSE release/
+          cp -R upstream/src upstream/assets upstream/tests upstream/patches upstream/vendor release/source/
+          cp upstream/Makefile upstream/gen-asset-module.py upstream/install-libmicrohttpd.sh upstream/README.md upstream/.gitmodules release/source/
+          cp -R sdk/ps5-payload-sdk release/dependencies/
+          curl -fL https://ftp.gnu.org/gnu/libmicrohttpd/libmicrohttpd-1.0.1.tar.gz -o release/dependencies/libmicrohttpd-1.0.1.tar.gz
+          find release -name .git -type f -delete
+          cp elf-header.txt release/
+          cd release
+          sha256sum arctic-fluid-ps5.elf > SHA256.txt
+          zip -qr ../Arctic_Fluid_PS5_0.1.0_beta_source.zip .
+      - name: Publish experimental release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create arctic-ps5-v0.1.0-beta release/arctic-fluid-ps5.elf release/SHA256.txt Arctic_Fluid_PS5_0.1.0_beta_source.zip --target "$GITHUB_SHA" --prerelease --title "Arctic Fluid PS5 0.1.0 beta — PKG extraction pending" --notes-file ps5/README_PS5.md
