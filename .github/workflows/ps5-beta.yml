@@ -30,6 +30,7 @@ jobs:
           export PS5_PAYLOAD_SDK="$GITHUB_WORKSPACE/sdk/ps5-payload-sdk"
           export LLVM_CONFIG=/usr/bin/llvm-config
           chmod +x upstream/install-libmicrohttpd.sh
+          (cd upstream && ./install-libmicrohttpd.sh)
           make -C upstream -j2
           readelf -h upstream/arctic-fluid-ps5.elf | tee elf-header.txt
           grep -q 'FreeBSD' elf-header.txt
